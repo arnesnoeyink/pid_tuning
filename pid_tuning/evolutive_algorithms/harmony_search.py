@@ -14,11 +14,11 @@ class HarmonySearch(AbstractEvolutive):
         self.set_paths()
         self.set_pubssubs()
     
-    def ind_eval(self, P: np.ndarray, reset_control: ControlGazebo, rate: Rate):
+    def ind_eval(self, P: np.ndarray, reset_control: ControlGazebo, hz: float):
         """ Arguments:
                 @P = population matrix\n
                 @reset_control = ControlGazebo object\n
-                @rate = rospy.Rate object\n
+                @hz = float object (frequency)\n
             Description:
                 Sends joint trajectories to roscontrol topic /command and evaluates
                 individual error and accumulates it in joint space and 
@@ -26,19 +26,22 @@ class HarmonySearch(AbstractEvolutive):
             Return:
                 None\n
         """
-        # pauses simulation
-        reset_control.pause()
+        period = 1.0 / hz
+
+        reset_control.pause() # Pause simulation
+
         for i in range(self.A):
             params = {'p' : P[i*3], 'i' : P[i*3+1], 'd' : P[i*3+2]}
-            config = self.dic_cli["client{}".format(i+1)].update_configuration(params)
+            client = self.dic_cli[f"client{i}"]
+            # future = client.call_async(UpdatePIDParams.Request(**params))   # TODO: Das habe ich noch nicht verstanden
+            # rclpy.spin_until_future_complete(self, future)
             self.errors[i] = 0.0
 
             self.g1_x = 0.0
             self.g1_y = 0.0
             self.g1_z = 0.0
 
-        # unpause simulation
-        reset_control.unpause()
+        reset_control.unpause()  # Unpause simulation
 
         # publishes each element of the trajectories
         length = len(self.trajectories)
@@ -47,7 +50,7 @@ class HarmonySearch(AbstractEvolutive):
             svr_c = i
             for j in range(self.A): 
                 self.pubs["pub{}".format(j+1)].publish(self.trajectories['q{}'.format(j+1)][i])
-            rate.sleep()
+            time.sleep(period)
 
             self.g1_x += abs(self.x_d[svr_c] - self.x_o)
             self.g1_y += abs(self.y_d[svr_c] - self.y_o)
@@ -55,11 +58,11 @@ class HarmonySearch(AbstractEvolutive):
             
         for i in range(self.A):
             self.pubs["pub{}".format(i+1)].publish(0.0)
-        rate.sleep()
+        time.sleep(period)
+        
+        reset_control.restart() # Restart simulation
+        reset_control.pause() # Pause simulation
 
-        # restarts and pauses simulation
-        reset_control.init_values()
-        reset_control.pause()
         # add error to individual (m = 3 (pos3 0,1,2,3))
         P[self.m] = sum(self.errors)
 
@@ -67,7 +70,7 @@ class HarmonySearch(AbstractEvolutive):
         P[-1] = 0.0
         P[-1] = self.scv()
 
-        self.info.header.stamp = rospy.Time.now()
+        self.info.header.stamp = self.get_clock().now().to_msg()
         self.info.header.frame_id = "base_link"
 
         self.info.individual = 1
@@ -77,11 +80,11 @@ class HarmonySearch(AbstractEvolutive):
         
         self.pub.publish(self.info)
 
-    def harmony_search(self, X: np.ndarray, reset_control: ControlGazebo, rate: Rate):
+    def harmony_search(self, X: np.ndarray, reset_control: ControlGazebo, hz: float):
         """ Arguments:
                 @X = harmony memory\n
                 @reset_control = ControlGazebo object\n
-                @rate = rospy.Rate object\n
+                @hz = float object (frequency)\n
             Description:
                 Harmony Search algorithm implementation in its
                 variant: "modified to handle numerical constraints
@@ -93,20 +96,20 @@ class HarmonySearch(AbstractEvolutive):
         best_worst = 1000
         start = time.time()
         end = start
-        while (g<= self.Gm and best_worst >= self.stop_error and (end - start) < self.tm):
-            rospy.loginfo("Generation: {}".format(g))
+        while (g <= self.Gm and best_worst >= self.stop_error and (end - start) < self.tm):
+            self.get_logger().info(f"Generation: {g}")
             self.info.generation = g
 
             #self.info.header.seq = rospy.Time.
             ##self.info.header = Header()
-            self.info.header.stamp = rospy.Time.now()
+            self.info.header.stamp = self.get_clock().now().to_msg()
             self.info.header.frame_id = "base_link"            
 
-            X_new = np.zeros(self.m+2)
+            X_new = np.zeros(self.m + 2)
 
             for j in range(self.m):
                 if random() < self.r_accept:
-                    index = randint(0, self.N-1)
+                    index = randint(0, self.N - 1)
                     if random() < self.r_pa:
                         if not self.bw:
                             self.bw = (self.b[0][j] - self.a[0][j]) / 1000
@@ -115,14 +118,14 @@ class HarmonySearch(AbstractEvolutive):
                     else:
                         X_new[j] = X[index][j]
                 else:
-                    X_new[j] = (self.b[0][j]- self.a[0][j])*np.random.random_sample() - self.a[0][j]
+                    X_new[j] = (self.b[0][j]- self.a[0][j]) * np.random.random_sample() - self.a[0][j]
     
                 if (X_new[j] > self.b[0][j]):
-                    X_new[j] = 2*self.b[0][j] - X_new[j]
+                    X_new[j] = 2 * self.b[0][j] - X_new[j]
                 if (X_new[j] < self.a[0][j]):
-                    X_new[j] = 2*self.a[0][j] - X_new[j]
+                    X_new[j] = 2 * self.a[0][j] - X_new[j]
 
-            self.ind_eval(X_new, reset_control, rate)
+            self.ind_eval(X_new, reset_control, hz)
 
             X = self.deb_bubble_sort(X)
             if self.deb(X_new, X[-1, :]) == 1:
@@ -141,7 +144,7 @@ class HarmonySearch(AbstractEvolutive):
             g += 1
             end = time.time()
 
-            rospy.loginfo("X_best: {}".format(X_best))
+            self.get_logger().info(f"X_best: {X_best}")
 
-        rospy.loginfo("X_best founded: {}".format(X_best))
+        self.get_logger().info(f"X_best found: {X_best}")
         return X_best

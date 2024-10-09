@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 from .evolutive_interface import *
-from rospy import Rate
+from rclpy.node import Node
+import rclpy
+from std_msgs.msg import Float64
 
-class AbstractEvolutive(EvolutiveInterface):
+
+class AbstractEvolutive(Node, EvolutiveInterface):
     def __init__(self, N: int, m: int, Gm : int, A : int, epsilon_1 = 0.10):
-        EvolutiveInterface().__init__()
+        super().__init__('abstract_evolutive_node')
+        EvolutiveInterface().__init__(self)
         self.N = N
         self.m = m
         self.Gm = Gm
@@ -24,7 +28,8 @@ class AbstractEvolutive(EvolutiveInterface):
         self.y_o = 0
         self.z_o = 0
         self.epsilon_1 = epsilon_1
-        odom_sub = rospy.Subscriber('/odom', Odometry, self.fb_callback)
+
+        self.odom_sub = self.create_subscription(Odometry, '/odom', self.fb_callback, 10)
         self.info = EvolutiveInfo()
     
     def read_json(self, file_path: str):
@@ -38,10 +43,11 @@ class AbstractEvolutive(EvolutiveInterface):
             Returns: 
                 None\n
         """
-        file = open(file_path)
-        self.data = json.load(file)
+        with open(file_path, 'r') as file:
+            self.data = json.load(file)
 
     def set_paths(self):
+        #TODO: Beschreibung überarbeiten
         """ 
             Arguments:
                 None\n
@@ -55,10 +61,10 @@ class AbstractEvolutive(EvolutiveInterface):
         sts_paths = self.data["state_paths"]
         cl_paths = self.data["client_paths"]
 
-        for i,cmd,st,cl in zip(range(1,len(cmd_paths)+1), cmd_paths, sts_paths, cl_paths):
-            self.dic_cmds["command{}".format(i)] = cmd
-            self.dic_sts["state{}".format(i)] = st
-            self.dic_cli["client{}".format(i)] = dynamic_reconfigure.client.Client(cl)
+        for i, cmd, st, cl in zip(range(1, len(cmd_paths)+1), cmd_paths, sts_paths, cl_paths):
+            self.dic_cmds[f"command{i}"] = cmd
+            self.dic_sts[f"state{i}"] = st
+            self.dic_cli[f"client{i}"] = cl
 
     def get_paths(self):
         """
@@ -81,10 +87,10 @@ class AbstractEvolutive(EvolutiveInterface):
                 None\n
         """
         for i in range(1, self.A+1):
-            self.pubs["pub{}".format(i)] = rospy.Publisher(self.dic_cmds["command{}".format(i)], Float64, queue_size=10)
-            self.subs["sub{}".format(i)] = rospy.Subscriber(self.dic_sts["state{}".format(i)], JointControllerState, self.error_callback, i-1)
-        
-        self.pub = rospy.Publisher('generations_info', EvolutiveInfo, queue_size=10)
+            self.pubs[f"pub{i}"] = self.create_publisher(Float64, self.dic_cmds[f"command{i}"], 10)  # TODO: Maybe change message type 
+            self.subs[f"sub{i}"] = self.create_subscription(JointControllerState, self.dic_sts[f"state{i}"], self.error_callback, i-1) # TODO: Maybe change message type 
+            # TODO: Change JointControllerState to other message type 
+        self.pub = self.create_publisher(EvolutiveInfo, 'generations_info', 10)
 
     def get_trajectories(self):
         """
@@ -105,7 +111,7 @@ class AbstractEvolutive(EvolutiveInterface):
             self.y_d = self.fb_trajectory['Y']
             self.z_d = self.fb_trajectory['Z']
         except Exception as e:
-            rospy.loginfo("Exception: {}".format(e))
+            self.get_logger().error(f"Exception: {e}")
             # vector x_d size len(self.trajectories)
             size = len(self.trajectories)
             self.x_d = np.zeros(size)
@@ -139,9 +145,7 @@ class AbstractEvolutive(EvolutiveInterface):
             if cnt == 2:
                 self.a[0][i] += d_min
                 self.b[0][i] = d_max*self.b[0][i]   #2 
-            cnt = cnt + 1
-            if cnt > 2:
-                cnt = 0  
+            cnt = (cnt + 1) % 3 
 
     def gen_population(self):
         """
@@ -156,9 +160,10 @@ class AbstractEvolutive(EvolutiveInterface):
         self.bounds()
         for i in range(self.N):
             for j in range(self.m):
-                X[i][j] = (self.b[0][j]- self.a[0][j])*np.random.random_sample() - self.a[0][j]
-        return X    
-
+                X[i][j] = (self.b[0][j]- self.a[0][j]) * np.random.random_sample() - self.a[0][j]
+        return X   
+     
+    # TODO: Change JointControllerState to other message type 
     def error_callback(self, data: Float64, args: int):
         """
             Arguments:
@@ -174,7 +179,7 @@ class AbstractEvolutive(EvolutiveInterface):
         self.errors[args] += abs(data.error)
         return self.errors[args]
 
-    def fb_callback(self, data: Float64):
+    def fb_callback(self, data: Odometry):
         """
             Arguments:
                 @data = (Odometry) current information of the floating base Odometry\n
@@ -189,66 +194,66 @@ class AbstractEvolutive(EvolutiveInterface):
         self.y_o = data.pose.pose.position.y
         self.z_o = data.pose.pose.position.z
 
-    def evaluate(self, P: np.ndarray, reset_control: ControlGazebo, rate: Rate):
+    def evaluate(self, P: np.ndarray, reset_control: ControlGazebo, hz: float):
         """ Arguments:
                 @P = (np.array) population matrix\n
                 @reset_control = (ControlGazebo) object\n
-                @rate = (rospy.Rate) object\n
+                @hz = float object (frequency)\n
             Definition:
                 Evaluates population updating PID gains (in rosparam) and sends
                 joint trajectories in order to get each tracking error.\n
             Returns:
                 None\n
         """
+        period = 1.0 / hz
+
         for w,p in zip(range(self.N), P):
-            # pause simulation
-            reset_control.pause()
-            #####rospy.loginfo("\nIndividual: {}".format(w))
+            reset_control.pause() # Pause simulation
+
             for i in range(self.A):                
                 params = {'p' : p[i*3], 'i' : p[i*3+1], 'd' : p[i*3+2]}
-                config = self.dic_cli["client{}".format(i+1)].update_configuration(params)
+                client = self.dic_cli[f"client{i}"]
+                # future = client.call_async(UpdatePIDParams.Request(**params))   # TODO: Das habe ich noch nicht verstanden
+                # rclpy.spin_until_future_complete(self, future)
                 self.errors[i] = 0.0
 
             self.g1_x = 0.0
             self.g1_y = 0.0
             self.g1_z = 0.0
 
-            # unpause simulation
-            reset_control.unpause()
+            reset_control.unpause() # Unpause simulation
 
             # publish each element of the trajectories
             length = len(self.trajectories) 
-            
             for i in range(length):
-                svr_c = i
-                for j in range(self.A):   
-                    self.pubs["pub{}".format(j+1)].publish(self.trajectories['q{}'.format(j+1)][i])
-                rate.sleep()   
+                
+                for j in range(self.A):
+                    traj_msg = Float64()
+                    traj_msg.data = self.trajectories[f"q{j+1}"][i]
+                    self.pubs[f"pub{j+1}"].publish(traj_msg)
+                time.sleep(period)  
 
-                self.g1_x += abs(self.x_d[svr_c] - self.x_o)
-                self.g1_y += abs(self.y_d[svr_c] - self.y_o)
-                self.g1_z += abs(self.z_d[svr_c] - self.z_o)
+                self.g1_x += abs(self.x_d[i] - self.x_o)
+                self.g1_y += abs(self.y_d[i] - self.y_o)
+                self.g1_z += abs(self.z_d[i] - self.z_o)
  
                 
             for i in range(self.A):
-                self.pubs["pub{}".format(i+1)].publish(0.0)
-            rate.sleep()
+                stop_msg = Float64()
+                stop_msg.data = 0.0
+                self.pubs[f"pub{i+1}"].publish(stop_msg)
+            time.sleep(period)
 
-            # restarts and pauses simulation
-            reset_control.init_values()
-            reset_control.pause()
-            # add error to individual (m = 3 (pos3 0,1,2,3))
-            #####rospy.loginfo("Error of {} individual: {}\n".format(w, sum(self.errors)))
+            
+            reset_control.restart() # Restart simulation
+            reset_control.pause() # Pause simulation
+
             P[w][self.m] = sum(self.errors)
 
-            # scv function
-            P[w][self.m+1] = 0.0
-            P[w][self.m+1] = self.scv()
+            P[w][self.m+1] = self.scv() # Calculate SCV
             
-            #####rospy.loginfo("SCV of {} individual: {}\n".format(w, P[w][self.m+1]))
-            self.info.header.stamp = rospy.Time.now()
+            self.info.header.stamp = self.get_clock().now().to_msg()
             self.info.header.frame_id = "base_link"
-            
             self.info.individual = w
             self.info.genes = P[w, 0:-2]
             self.info.of = P[w][-2]
@@ -269,7 +274,7 @@ class AbstractEvolutive(EvolutiveInterface):
 
         g1 = self.g1_x + self.g1_y + self.g1_z
         
-        vvr = abs(g1)-self.epsilon_1
+        vvr = abs(g1) - self.epsilon_1
         if vvr > 0:
             self.f = self.f + vvr
 
