@@ -11,7 +11,7 @@ class DifferentialEvolution(AbstractEvolutive):
         self.read_json(file_path)
         self.get_trajectories()
         self.set_paths()
-        self.set_pubssubs()
+        self.set_publisher()
 
     def dif_evolution(self, X: np.ndarray, reset_control: ControlGazebo, hz: float):
         """ Arguments:

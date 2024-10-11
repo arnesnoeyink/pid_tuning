@@ -2,6 +2,7 @@
 from .evolutive_interface import *
 from rclpy.node import Node
 import rclpy
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
 
@@ -17,10 +18,9 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         self.A = A
         self.errors = np.zeros(self.A)
         self.dic_cmds = {}
-        self.dic_sts = {}
         self.dic_cli = {}
         self.pubs = {}
-        self.subs = {}
+        self.jointstate_sub = self.create_subscription(JointState, "/joint_states", self.error_callback, 0)
         self.g1_x = 0
         self.g1_y = 0
         self.g1_z = 0
@@ -58,12 +58,10 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 None\n
         """
         cmd_paths = self.data["command_paths"] 
-        sts_paths = self.data["state_paths"]
         cl_paths = self.data["client_paths"]
 
-        for i, cmd, st, cl in zip(range(1, len(cmd_paths)+1), cmd_paths, sts_paths, cl_paths):
+        for i, cmd, st, cl in zip(range(1, len(cmd_paths)+1), cmd_paths, cl_paths):
             self.dic_cmds[f"command{i}"] = cmd
-            self.dic_sts[f"state{i}"] = st
             self.dic_cli[f"client{i}"] = cl
 
     def get_paths(self):
@@ -71,13 +69,13 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             Arguments:
                 None\n
             Definition:
-                Returns the dictionaries of the paths for command, state and clients.\n
+                Returns the dictionaries of the paths for command and clients.\n
             Returns:
                 (tuple): dictionaries\n
         """
-        return self.dic_cmds, self.dic_sts, self.dic_cli
+        return self.dic_cmds, self.dic_cli
 
-    def set_pubssubs(self):
+    def set_publisher(self):
         """ 
             Arguments:
                 None\n
@@ -88,8 +86,6 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         """
         for i in range(1, self.A+1):
             self.pubs[f"pub{i}"] = self.create_publisher(Float64, self.dic_cmds[f"command{i}"], 10)  # TODO: Maybe change message type 
-            self.subs[f"sub{i}"] = self.create_subscription(JointControllerState, self.dic_sts[f"state{i}"], self.error_callback, i-1) # TODO: Maybe change message type 
-            # TODO: Change JointControllerState to other message type 
         self.pub = self.create_publisher(EvolutiveInfo, 'generations_info', 10)
 
     def get_trajectories(self):

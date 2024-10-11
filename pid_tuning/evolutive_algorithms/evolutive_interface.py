@@ -35,7 +35,7 @@ class EvolutiveInterface:
     def get_paths(self):
         pass
     
-    def set_pubssubs(self):
+    def set_publisher(self):
         pass
     
     def get_trajectories(self):
