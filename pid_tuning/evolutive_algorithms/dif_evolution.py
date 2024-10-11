@@ -10,8 +10,6 @@ class DifferentialEvolution(AbstractEvolutive):
         self.tm = tm
         self.read_json(file_path)
         self.get_trajectories()
-        self.set_paths()
-        self.set_publisher()
 
     def dif_evolution(self, X: np.ndarray, reset_control: ControlGazebo, hz: float):
         """ Arguments:
@@ -33,8 +31,6 @@ class DifferentialEvolution(AbstractEvolutive):
             self.get_logger().info(f"Generation: {g}")
             self.info.generation = g
 
-            #self.info.header.seq = rospy.Time.to_sec()
-            ##self.info.header = Header()
             self.info.header.stamp = self.get_clock().now().to_msg()
             self.info.header.frame_id = "base_link" 
             

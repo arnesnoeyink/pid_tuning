@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 from .evolutive_interface import *
 from rclpy.node import Node
-import rclpy
-from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
-
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import ParameterValue, Parameter
+from control_msgs.msg import MultiDOFCommand, MultiDOFStateStamped
 
 class AbstractEvolutive(Node, EvolutiveInterface):
     def __init__(self, N: int, m: int, Gm : int, A : int, epsilon_1 = 0.10):
@@ -17,10 +17,10 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         self.b = np.ones((1, self.m))
         self.A = A
         self.errors = np.zeros(self.A)
-        self.dic_cmds = {}
-        self.dic_cli = {}
-        self.pubs = {}
-        self.jointstate_sub = self.create_subscription(JointState, "/joint_states", self.error_callback, 0)
+        self.reference_pub = self.create_publisher(MultiDOFCommand, "/pid_controller/reference", 10)
+        self.generations_info_pub = self.create_publisher(EvolutiveInfo, 'generations_info', 10)
+        self.update_pid_srv = self.create_client(SetParameters,"/pid_controller/set_parameters") 
+        self.controller_state_sub = self.create_subscription(MultiDOFStateStamped, "/pid_controller/controller_state", self.error_callback, 0)
         self.g1_x = 0
         self.g1_y = 0
         self.g1_z = 0
@@ -28,6 +28,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         self.y_o = 0
         self.z_o = 0
         self.epsilon_1 = epsilon_1
+        self.dof_names = ["base_link_link_01", "link_01_link_02", "link_02_link_03"]
 
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.fb_callback, 10)
         self.info = EvolutiveInfo()
@@ -44,49 +45,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 None\n
         """
         with open(file_path, 'r') as file:
-            self.data = json.load(file)
-
-    def set_paths(self):
-        #TODO: Beschreibung überarbeiten
-        """ 
-            Arguments:
-                None\n
-            Definition:
-                Creates dictionaries to store the command and state
-                topics, and also a dictionary for the dynamic reconfigure clients.\n                
-            Returns:
-                None\n
-        """
-        cmd_paths = self.data["command_paths"] 
-        cl_paths = self.data["client_paths"]
-
-        for i, cmd, st, cl in zip(range(1, len(cmd_paths)+1), cmd_paths, cl_paths):
-            self.dic_cmds[f"command{i}"] = cmd
-            self.dic_cli[f"client{i}"] = cl
-
-    def get_paths(self):
-        """
-            Arguments:
-                None\n
-            Definition:
-                Returns the dictionaries of the paths for command and clients.\n
-            Returns:
-                (tuple): dictionaries\n
-        """
-        return self.dic_cmds, self.dic_cli
-
-    def set_publisher(self):
-        """ 
-            Arguments:
-                None\n
-            Description:
-                Initializes and instantiates Publisher and Subscriber objects.\n 
-            Returns:
-                None\n
-        """
-        for i in range(1, self.A+1):
-            self.pubs[f"pub{i}"] = self.create_publisher(Float64, self.dic_cmds[f"command{i}"], 10)  # TODO: Maybe change message type 
-        self.pub = self.create_publisher(EvolutiveInfo, 'generations_info', 10)
+            self.data = json.load(file) 
 
     def get_trajectories(self):
         """
@@ -159,8 +118,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 X[i][j] = (self.b[0][j]- self.a[0][j]) * np.random.random_sample() - self.a[0][j]
         return X   
      
-    # TODO: Change JointControllerState to other message type 
-    def error_callback(self, data: Float64, args: int):
+    def error_callback(self, data: MultiDOFStateStamped):
         """
             Arguments:
                 @data = (JointControllerState) current information of the State\n
@@ -172,8 +130,11 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             Returns:
                 Float64: absolute error of joint "args"\n
         """
-        self.errors[args] += abs(data.error)
-        return self.errors[args]
+        # Calculate error for each joint with: error = setpoint - state
+        for i in range(self.A):
+            self.errors[i] += abs(data.dof_states[i].error)
+
+        return self.errors
 
     def fb_callback(self, data: Odometry):
         """
@@ -206,12 +167,129 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         for w,p in zip(range(self.N), P):
             reset_control.pause() # Pause simulation
 
-            for i in range(self.A):                
-                params = {'p' : p[i*3], 'i' : p[i*3+1], 'd' : p[i*3+2]}
-                client = self.dic_cli[f"client{i}"]
-                # future = client.call_async(UpdatePIDParams.Request(**params))   # TODO: Das habe ich noch nicht verstanden
-                # rclpy.spin_until_future_complete(self, future)
-                self.errors[i] = 0.0
+            # TODO: Verallgemeinern mithilfe einer for Schleife
+            # Joint0
+            p_0 = p[0]
+            i_0 = p[1]
+            d_0 = p[2]
+            req_0 = SetParameters.Request()
+            parameters_to_set_0 = [
+                {
+                    'name': 'gains.base_link_link_01.p',
+                    'type': 3,
+                    'value': p_0
+                },
+                {
+                    'name': 'gains.base_link_link_01.i',
+                    'type': 3,
+                    'value': i_0
+                },
+                {
+                    'name': 'gains.base_link_link_01.d',
+                    'type': 3,
+                    'value': d_0
+                }
+            ]
+
+            for param_data in parameters_to_set_0:
+                param = Parameter()
+                param.name = param_data['name']
+
+                value = ParameterValue()
+                value.type = param_data['type']
+                value.double_value = param_data['value']
+
+                param.value = value
+                req_0.parameters.append(param)
+
+            while not self.update_pid_srv.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info('update pid values service not available, waiting again...')
+            resp_0 = self.update_pid_srv.call_async(req_0)
+            rclpy.spin_until_future_complete(self, resp_0)
+            self.get_logger().info('update pid values successfull')
+            self.errors[0] = 0.0
+
+            # Joint1
+            p_1 = p[3]
+            i_1 = p[4]
+            d_1 = p[5]
+            req_1 = SetParameters.Request()
+            parameters_to_set_1 = [
+                {
+                    'name': 'gains.link_01_link_02.p',
+                    'type': 3,
+                    'value': p_1
+                },
+                {
+                    'name': 'gains.link_01_link_02.i',
+                    'type': 3,
+                    'value': i_1
+                },
+                {
+                    'name': 'gains.link_01_link_02.d',
+                    'type': 3,
+                    'value': d_1
+                }
+            ]
+
+            for param_data in parameters_to_set_1:
+                param = Parameter()
+                param.name = param_data['name']
+
+                value = ParameterValue()
+                value.type = param_data['type']
+                value.double_value = param_data['value']
+
+                param.value = value
+                req_1.parameters.append(param)
+
+            while not self.update_pid_srv.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info('update pid values service not available, waiting again...')
+            resp_1 = self.update_pid_srv.call_async(req_1)
+            rclpy.spin_until_future_complete(self, resp_1)
+            self.get_logger().info('update pid values successfull')
+            self.errors[1] = 0.0
+
+            # Joint2
+            p_2 = p[6]
+            i_2 = p[7]
+            d_2 = p[8]
+            req_2 = SetParameters.Request()
+            parameters_to_set_2 = [
+                {
+                    'name': 'gains.link_02_link_03.p',
+                    'type': 3,
+                    'value': p_2
+                },
+                {
+                    'name': 'gains.link_02_link_03.i',
+                    'type': 3,
+                    'value': i_2
+                },
+                {
+                    'name': 'gains.link_02_link_03.d',
+                    'type': 3,
+                    'value': d_2
+                }
+            ]
+
+            for param_data in parameters_to_set_2:
+                param = Parameter()
+                param.name = param_data['name']
+
+                value = ParameterValue()
+                value.type = param_data['type']
+                value.double_value = param_data['value']
+
+                param.value = value
+                req_2.parameters.append(param)
+
+            while not self.update_pid_srv.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info('update pid values service not available, waiting again...')
+            resp_2 = self.update_pid_srv.call_async(req_2)
+            rclpy.spin_until_future_complete(self, resp_2)
+            self.get_logger().info('update pid values successfull')
+            self.errors[2] = 0.0
 
             self.g1_x = 0.0
             self.g1_y = 0.0
@@ -222,25 +300,26 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             # publish each element of the trajectories
             length = len(self.trajectories) 
             for i in range(length):
-                
+                traj_msg = MultiDOFCommand()
+                traj_msg.dof_names = self.dof_names
                 for j in range(self.A):
-                    traj_msg = Float64()
-                    traj_msg.data = self.trajectories[f"q{j+1}"][i]
-                    self.pubs[f"pub{j+1}"].publish(traj_msg)
+                    traj_msg.values[j] = self.trajectories[f"q{j+1}"][i]
+                    traj_msg.values_dot[j] = 0.0
+                self.reference_pub.publish(traj_msg)
                 time.sleep(period)  
 
                 self.g1_x += abs(self.x_d[i] - self.x_o)
                 self.g1_y += abs(self.y_d[i] - self.y_o)
                 self.g1_z += abs(self.z_d[i] - self.z_o)
  
-                
+            stop_msg = MultiDOFCommand()
+            stop_msg.dof_names = self.dof_names 
             for i in range(self.A):
-                stop_msg = Float64()
-                stop_msg.data = 0.0
-                self.pubs[f"pub{i+1}"].publish(stop_msg)
+                stop_msg.values[i] = 0.0
+                stop_msg.values_dot[j] = 0.0
+            self.reference_pub.publish(stop_msg)
             time.sleep(period)
 
-            
             reset_control.restart() # Restart simulation
             reset_control.pause() # Pause simulation
 
@@ -255,7 +334,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             self.info.of = P[w][-2]
             self.info.scv = P[w][-1]
             
-            self.pub.publish(self.info)
+            self.generations_info_pub.publish(self.info)
 
     def scv(self):
         """ Arguments:

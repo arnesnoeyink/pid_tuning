@@ -28,15 +28,6 @@ class EvolutiveInterface:
 
     def evaluate(self):
         pass
-
-    def set_paths(self):
-        pass
-    
-    def get_paths(self):
-        pass
-    
-    def set_publisher(self):
-        pass
     
     def get_trajectories(self):
         pass
