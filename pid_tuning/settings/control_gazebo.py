@@ -6,13 +6,6 @@ from rclpy.node import Node
 from ros_gz_interfaces.srv import ControlWorld
 from ament_index_python.packages import get_package_share_directory
 
-
-# Das setzen der Physik Parameter funktioniert nicht im Moment nicht.
-# Es gibt keine Fehlermeldung, aber die Parameter werden nicht gesetzt.
-# Der Workaround ist, in die Welt die Parameter zu schreiben. 
-# /gazebo/set_physics_properties
-
-
 class ControlGazebo(Node):
     def __init__(self):
         super().__init__("control_gazebo_node")
