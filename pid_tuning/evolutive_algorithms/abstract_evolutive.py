@@ -166,6 +166,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
 
         for w,p in zip(range(self.N), P):
             reset_control.pause() # Pause simulation
+            self.get_logger().info('Simulation paused')
 
             # TODO: Verallgemeinern mithilfe einer for Schleife
             # Joint0
@@ -296,6 +297,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             self.g1_z = 0.0
 
             reset_control.unpause() # Unpause simulation
+            self.get_logger().info('Simulation unpaused')
 
             # publish each element of the trajectories
             length = len(self.trajectories) 
@@ -321,6 +323,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             time.sleep(period)
 
             reset_control.restart() # Restart simulation
+            time.sleep(5) # Wait for simulation to restart
             reset_control.pause() # Pause simulation
 
             P[w][self.m] = sum(self.errors)
