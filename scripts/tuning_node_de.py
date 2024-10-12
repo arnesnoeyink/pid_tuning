@@ -24,14 +24,13 @@ class TuningDE(Node):
 
     def timer_callback(self):
         try:
-            self.get_logger().warn("Läuft!")
             file = open("best_pid_values_DE.txt", 'w')
             self.de.evaluate(self.X, self.reset_control, self.hz)
             X_best = self.de.dif_evolution(self.X, self.reset_control, self.hz)
             file.write(str(X_best))
             file.close()
         except Exception as e:
-            self.get_logger().warn(f"Error: {e}")
+            self.get_logger().error(f"Error: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

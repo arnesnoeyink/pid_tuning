@@ -13,6 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'bash_scripts'), glob('bash_scripts/*.sh')),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -23,6 +24,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'tuning_node_de = scripts.tuning_node_de:main',
+            'tuning_node_hs = scripts.tuning_node_hs:main',
         ],
     },
 )
