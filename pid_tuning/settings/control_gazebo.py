@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 import rclpy
+import os
+import subprocess
 from rclpy.node import Node
 from ros_gz_interfaces.srv import ControlWorld
-import subprocess
+from ament_index_python.packages import get_package_share_directory
+
 
 # Das setzen der Physik Parameter funktioniert nicht im Moment nicht.
 # Es gibt keine Fehlermeldung, aber die Parameter werden nicht gesetzt.
 # Der Workaround ist, in die Welt die Parameter zu schreiben. 
 # /gazebo/set_physics_properties
 
+
 class ControlGazebo(Node):
     def __init__(self):
         super().__init__("control_gazebo_node")
-        print("ControlGazebo Init")
         self.world_control_srv = self.create_client(ControlWorld, '/world/empty/control')
         self.world_control_req = ControlWorld.Request()
-
-    def update(self):
-        print("ControlGazebo update")
         
     def pause(self):
         print("ControlGazebo Pause")
@@ -36,7 +36,9 @@ class ControlGazebo(Node):
         rclpy.spin_until_future_complete(self, resp)
     
     def restart(self):
-        subprocess.run(["/home/arne/bash_scripts/restart_gazebo.sh"], shell=True)
+        pid_tuning_dir = get_package_share_directory('pid_tuning')
+        bash_file = os.path.join(pid_tuning_dir, 'bash_scripts/restart_gazebo.sh')
+        subprocess.run([bash_file], shell=True)
 
 def main(args=None):
     rclpy.init(args=args)

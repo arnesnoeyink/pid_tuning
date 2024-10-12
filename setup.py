@@ -1,4 +1,6 @@
+import os
 from setuptools import find_packages, setup
+from glob import glob
 
 package_name = 'pid_tuning'
 
@@ -10,6 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'bash_scripts'), glob('bash_scripts/*.sh')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
