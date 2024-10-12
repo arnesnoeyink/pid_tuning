@@ -9,7 +9,6 @@ from control_msgs.msg import MultiDOFCommand, MultiDOFStateStamped
 class AbstractEvolutive(Node, EvolutiveInterface):
     def __init__(self, N: int, m: int, Gm : int, A : int, epsilon_1 = 0.10):
         super().__init__('abstract_evolutive_node')
-        EvolutiveInterface().__init__(self)
         self.N = N
         self.m = m
         self.Gm = Gm
@@ -20,7 +19,7 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         self.reference_pub = self.create_publisher(MultiDOFCommand, "/pid_controller/reference", 10)
         self.generations_info_pub = self.create_publisher(EvolutiveInfo, 'generations_info', 10)
         self.update_pid_srv = self.create_client(SetParameters,"/pid_controller/set_parameters") 
-        self.controller_state_sub = self.create_subscription(MultiDOFStateStamped, "/pid_controller/controller_state", self.error_callback, 0)
+        self.controller_state_sub = self.create_subscription(MultiDOFStateStamped, "/pid_controller/controller_state", self.error_callback, 10)
         self.g1_x = 0
         self.g1_y = 0
         self.g1_z = 0

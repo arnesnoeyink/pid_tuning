@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import rclpy
+import os
 from rclpy.node import Node
 from pid_tuning.evolutive_algorithms.dif_evolution import DifferentialEvolution
 from pid_tuning.settings.control_gazebo import ControlGazebo
 
 class TuningDE(Node):
     def __init__(self):
-        super().__init__("tuning_de_node")
+        super().__init__("tuning_node_de")
         
         self.A = 3
         self.m = 9
@@ -17,7 +18,7 @@ class TuningDE(Node):
         self.hz = 25
         self.reset_control = ControlGazebo()
 
-        self.de = DifferentialEvolution(self.N, self.m, self.Gm, self.F, self.C, self.A, '/home/arne/jazzy_ws/src/scara_robot_description/config/paths.json', epsilon_1=1, tm=28800)
+        self.de = DifferentialEvolution(self.N, self.m, self.Gm, self.F, self.C, self.A, '/home/arne/jazzy_ws/install/scara_robot_description/share/scara_robot_description/config/paths.json', epsilon_1=1, tm=28800)
         self.X = self.de.gen_population()
 
         self.timer = self.create_timer(1.0/self.hz, self.timer_callback)

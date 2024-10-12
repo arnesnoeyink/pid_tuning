@@ -32,12 +32,3 @@ class ControlGazebo(Node):
         pid_tuning_dir = get_package_share_directory('pid_tuning')
         bash_file = os.path.join(pid_tuning_dir, 'bash_scripts/restart_gazebo.sh')
         subprocess.run([bash_file], shell=True)
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = ControlGazebo()
-    node.restart()
-    rclpy.shutdown()
-
-if __name__ == "__main__":
-    main()
