@@ -13,7 +13,6 @@ class ControlGazebo(Node):
         self.world_control_req = ControlWorld.Request()
         
     def pause(self):
-        print("ControlGazebo Pause")
         self.world_control_req.world_control.pause = True 
         while not self.world_control_srv.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Pause service not available, waiting again...')
@@ -21,7 +20,6 @@ class ControlGazebo(Node):
         rclpy.spin_until_future_complete(self, resp)
         
     def unpause(self):
-        print("ControlGazebo Unpause")
         self.world_control_req.world_control.pause = False 
         while not self.world_control_srv.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Unpause service not available, waiting again...')

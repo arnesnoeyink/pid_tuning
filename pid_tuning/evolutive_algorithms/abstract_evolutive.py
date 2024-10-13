@@ -129,7 +129,6 @@ class AbstractEvolutive(Node, EvolutiveInterface):
             Returns:
                 Float64: absolute error of joint "args"\n
         """
-        # Calculate error for each joint with: error = setpoint - state
         for i in range(self.A):
             self.errors[i] += abs(data.dof_states[i].error)
 
@@ -163,9 +162,8 @@ class AbstractEvolutive(Node, EvolutiveInterface):
         """
         period = 1.0 / hz
 
-        for w,p in zip(range(self.N), P):
-            reset_control.pause() # Pause simulation
-            self.get_logger().info('Simulation paused')
+        for w, p in zip(range(self.N), P):
+            reset_control.pause()
 
             # TODO: Verallgemeinern mithilfe einer for Schleife
             # Joint0
@@ -206,7 +204,6 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 self.get_logger().info('update pid values service not available, waiting again...')
             resp_0 = self.update_pid_srv.call_async(req_0)
             rclpy.spin_until_future_complete(self, resp_0)
-            self.get_logger().info('update pid values successfull')
             self.errors[0] = 0.0
 
             # Joint1
@@ -247,7 +244,6 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 self.get_logger().info('update pid values service not available, waiting again...')
             resp_1 = self.update_pid_srv.call_async(req_1)
             rclpy.spin_until_future_complete(self, resp_1)
-            self.get_logger().info('update pid values successfull')
             self.errors[1] = 0.0
 
             # Joint2
@@ -288,21 +284,21 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 self.get_logger().info('update pid values service not available, waiting again...')
             resp_2 = self.update_pid_srv.call_async(req_2)
             rclpy.spin_until_future_complete(self, resp_2)
-            self.get_logger().info('update pid values successfull')
             self.errors[2] = 0.0
 
             self.g1_x = 0.0
             self.g1_y = 0.0
             self.g1_z = 0.0
 
-            reset_control.unpause() # Unpause simulation
-            self.get_logger().info('Simulation unpaused')
+            reset_control.unpause()
 
             # publish each element of the trajectories
             length = len(self.trajectories) 
             for i in range(length):
                 traj_msg = MultiDOFCommand()
                 traj_msg.dof_names = self.dof_names
+                traj_msg.values = [0.0, 0.0, 0.0]
+                traj_msg.values_dot = [0.0, 0.0, 0.0]
                 for j in range(self.A):
                     traj_msg.values[j] = self.trajectories[f"q{j+1}"][i]
                     traj_msg.values_dot[j] = 0.0
@@ -314,16 +310,19 @@ class AbstractEvolutive(Node, EvolutiveInterface):
                 self.g1_z += abs(self.z_d[i] - self.z_o)
  
             stop_msg = MultiDOFCommand()
-            stop_msg.dof_names = self.dof_names 
+            stop_msg.dof_names = self.dof_names
+            stop_msg.values = [0.0, 0.0, 0.0]
+            stop_msg.values_dot = [0.0, 0.0, 0.0]
             for i in range(self.A):
                 stop_msg.values[i] = 0.0
                 stop_msg.values_dot[j] = 0.0
             self.reference_pub.publish(stop_msg)
             time.sleep(period)
 
-            reset_control.restart() # Restart simulation
-            time.sleep(5) # Wait for simulation to restart
-            reset_control.pause() # Pause simulation
+            reset_control.restart()
+            # TODO: Check if the simulation is restarted.
+            time.sleep(8) # Wait for simulation to restart
+            reset_control.pause()
 
             P[w][self.m] = sum(self.errors)
 
