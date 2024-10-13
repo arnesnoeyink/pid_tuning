@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'bash_scripts'), glob('bash_scripts/*.sh')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'results'), glob('results/*.txt')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
